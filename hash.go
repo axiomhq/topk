@@ -7,7 +7,7 @@ import (
 
 func copyAndNormalizeBytes(b []byte, s string, start int, end int, caseSensitive bool) {
 	for i := start; i < end; i++ {
-		x := s[i]
+		b[i - start] = s[i]
 	}
 	for i := end - start + 1; i < len(b); i++ {
 		b[i] = 0
