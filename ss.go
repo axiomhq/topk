@@ -8,7 +8,6 @@ package topk
 import (
 	"fmt"
 
-	"github.com/dgryski/go-metro"
 )
 
 const MAX_UINT64 = ^uint64(0)
@@ -452,7 +451,7 @@ func (ss *StreamSummary) materialize(ids []uint64, ordered bool, guaranteed bool
 }
 
 func (ss *StreamSummary) Hash(phrase string) uint64 {
-	hash := metro.Hash64Str(phrase, uint64(ss.m))
+	hash := Hash64(phrase, uint64(ss.m), false)
 	return hash
 }
 
