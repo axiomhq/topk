@@ -23,7 +23,6 @@ import (
 	"io"
 	"sort"
 
-	"github.com/dgryski/go-metro"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -177,7 +176,7 @@ func reduce(x uint64, n int) uint32 {
 // It returns an estimation for the just inserted element
 func (s *Stream) Insert(x string, count int) Element {
 
-	xhash := reduce(metro.Hash64Str(x, 0), len(s.alphas))
+	xhash := reduce(Hash64(x, 0, false), len(s.alphas))
 
 	// are we tracking this element?
 	if idx, ok := s.k.m[x]; ok {
@@ -208,7 +207,7 @@ func (s *Stream) Insert(x string, count int) Element {
 	// replace the current minimum element
 	minElement := s.k.elts[0]
 
-	mkhash := reduce(metro.Hash64Str(minElement.Key, 0), len(s.alphas))
+	mkhash := reduce(Hash64(minElement.Key, 0, false), len(s.alphas))
 	s.alphas[mkhash] = minElement.Count
 
 	e := Element{
@@ -246,7 +245,7 @@ func (s *Stream) Merge(other *Stream) error {
 	for k := range eKeys {
 		idx1, ok1 := s.k.m[k]
 		idx2, ok2 := other.k.m[k]
-		xhash := reduce(metro.Hash64Str(k, 0), len(s.alphas))
+		xhash := reduce(Hash64(k, 0, false), len(s.alphas))
 		min1 := s.alphas[xhash]
 		min2 := other.alphas[xhash]
 
@@ -320,7 +319,7 @@ func (s *Stream) Keys() []Element {
 
 // Estimate returns an estimate for the item x
 func (s *Stream) Estimate(x string) Element {
-	xhash := reduce(metro.Hash64Str(x, 0), len(s.alphas))
+	xhash := reduce(Hash64(x, 0, false), len(s.alphas))
 
 	// are we tracking this element?
 	if idx, ok := s.k.m[x]; ok {
