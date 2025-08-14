@@ -438,36 +438,36 @@ func caseRunner(t *testing.T, slices [][]string, topk int, delta float64) {
 	}
 }
 
-// func TestMarshalUnMarshal(t *testing.T) {
-// 	topK := int(100)
+func TestMarshalUnMarshal(t *testing.T) {
+	topK := int(100)
 
-// 	words := loadWords()
+	words := loadWords()
 
-// 	// Words in prime index positions are copied
-// 	for _, p := range []int{2, 3, 5, 7, 11, 13, 17, 23} {
-// 		for i := p; i < len(words); i += p {
-// 			words[i] = words[p]
-// 		}
-// 	}
+	// Words in prime index positions are copied
+	for _, p := range []int{2, 3, 5, 7, 11, 13, 17, 23} {
+		for i := p; i < len(words); i += p {
+			words[i] = words[p]
+		}
+	}
 
-// 	sketch := New(topK, true)
+	sketch := New(topK, true)
 
-// 	for _, w := range words {
-// 		sketch.Insert(w, 1)
-// 	}
+	for _, w := range words {
+		sketch.Insert(w, 1)
+	}
 
-// 	b := bytes.NewBuffer(nil)
-// 	err := sketch.Encode(b)
-// 	assert.NoError(t, err)
+	b := bytes.NewBuffer(nil)
+	err := sketch.Encode(b)
+	assert.NoError(t, err)
 
-// 	fmt.Println(len(b.Bytes()))
+	fmt.Println(len(b.Bytes()))
 
-// 	tmp := &TopK{}
-// 	err = tmp.Decode(b)
-// 	assert.NoError(t, err)
-// 	assert.EqualValues(t, sketch, tmp)
+	tmp := &TopK{}
+	err = tmp.Decode(b)
+	assert.NoError(t, err)
+	assert.EqualValues(t, sketch, tmp)
 
-// }
+}
 func TestCaseSensitive(t *testing.T) {
 	words := []string{
 		"Hello",
@@ -510,5 +510,16 @@ func TestCaseSensitive(t *testing.T) {
 	
 	if !reflect.DeepEqual(sketch, decoded) {
 		t.Error("they are not equal.")
+	}
+}
+
+func BenchmarkTopK(b *testing.B) {
+	words := loadWords()
+	for b.Loop() {
+		sketch := New(100, true)
+		for _, w := range words {
+			sketch.Insert(w, 1)
+		}
+		sketch.Keys()
 	}
 }
