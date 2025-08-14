@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -42,8 +41,10 @@ func (elts elementsByCountDescending) Less(i, j int) bool {
 func (elts elementsByCountDescending) Swap(i, j int) { elts[i], elts[j] = elts[j], elts[i] }
 
 type keys struct {
-	m    map[string]int
-	elts []Element
+	m             map[uint64]int
+	strings       map[uint64]string
+	elts          []Element
+	caseSensitive bool
 }
 
 func (tk *keys) EncodeMsgp(w *msgp.Writer) error {
@@ -51,7 +52,7 @@ func (tk *keys) EncodeMsgp(w *msgp.Writer) error {
 		return err
 	}
 	for k, v := range tk.m {
-		if err := w.WriteString(k); err != nil {
+		if err := w.WriteString(tk.strings[k]); err != nil {
 			return err
 		}
 		if err := w.WriteInt(v); err != nil {
@@ -76,7 +77,7 @@ func (tk *keys) EncodeMsgp(w *msgp.Writer) error {
 	return nil
 }
 
-func (tk *keys) DecodeMsp(r *msgp.Reader) error {
+func (tk *keys) DecodeMsgp(r *msgp.Reader) error {
 	var (
 		err error
 		sz  uint32
@@ -86,7 +87,8 @@ func (tk *keys) DecodeMsp(r *msgp.Reader) error {
 		return err
 	}
 
-	tk.m = make(map[string]int, sz)
+	tk.m = make(map[uint64]int, sz)
+	tk.strings = make(map[uint64]string, sz)
 
 	for i := uint32(0); i < sz; i++ {
 		key, err := r.ReadString()
@@ -97,7 +99,8 @@ func (tk *keys) DecodeMsp(r *msgp.Reader) error {
 		if err != nil {
 			return err
 		}
-		tk.m[key] = val
+		tk.m[Hash64(key, 0, tk.caseSensitive)] = val
+		tk.strings[Hash64(key, 0, tk.caseSensitive)] = key
 	}
 
 	if sz, err = r.ReadArrayHeader(); err != nil {
@@ -133,38 +136,44 @@ func (tk *keys) Swap(i, j int) {
 
 	tk.elts[i], tk.elts[j] = tk.elts[j], tk.elts[i]
 
-	tk.m[tk.elts[i].Key] = i
-	tk.m[tk.elts[j].Key] = j
+	hashI := Hash64(tk.elts[i].Key, 0, tk.caseSensitive)
+	hashJ := Hash64(tk.elts[j].Key, 0, tk.caseSensitive)
+	tk.m[hashI] = i
+	tk.m[hashJ] = j
 }
 
 func (tk *keys) Push(x interface{}) {
 	e := x.(Element)
-	tk.m[e.Key] = len(tk.elts)
+	hash := Hash64(e.Key, 0, tk.caseSensitive)
+	tk.m[hash] = len(tk.elts)
+	tk.strings[hash] = e.Key
 	tk.elts = append(tk.elts, e)
 }
 
 func (tk *keys) Pop() interface{} {
 	var e Element
 	e, tk.elts = tk.elts[len(tk.elts)-1], tk.elts[:len(tk.elts)-1]
-
-	delete(tk.m, e.Key)
-
+	hash := Hash64(e.Key, 0, tk.caseSensitive)
+	delete(tk.m, hash)
+	delete(tk.strings, hash)
 	return e
 }
 
 // Stream calculates the TopK elements for a stream
 type Stream struct {
-	n      int
-	k      keys
-	alphas []int
+	n             int
+	k             keys
+	alphas        []int
+	caseSensitive bool
 }
 
 // New returns a Stream estimating the top n most frequent elements
-func newStream(n int) *Stream {
+func newStream(n int, caseSensitive bool) *Stream {
 	return &Stream{
-		n:      n,
-		k:      keys{m: make(map[string]int, n), elts: make([]Element, 0, n)},
-		alphas: make([]int, n*6), // 6 is the multiplicative constant from the paper
+		n:             n,
+		k:             keys{m: make(map[uint64]int, n), elts: make([]Element, 0, n), strings: make(map[uint64]string), caseSensitive: caseSensitive},
+		alphas:        make([]int, n*6), // 6 is the multiplicative constant from the paper
+		caseSensitive: caseSensitive,
 	}
 }
 
@@ -176,10 +185,10 @@ func reduce(x uint64, n int) uint32 {
 // It returns an estimation for the just inserted element
 func (s *Stream) Insert(x string, count int) Element {
 
-	xhash := reduce(Hash64(x, 0, false), len(s.alphas))
-
+	xhash := Hash64(x, 0, s.caseSensitive)
+	alphaIdx := reduce(xhash, len(s.alphas))
 	// are we tracking this element?
-	if idx, ok := s.k.m[x]; ok {
+	if idx, ok := s.k.m[xhash]; ok {
 		s.k.elts[idx].Count += count
 		e := s.k.elts[idx]
 		heap.Fix(&s.k, idx)
@@ -194,33 +203,36 @@ func (s *Stream) Insert(x string, count int) Element {
 		return e
 	}
 
-	if s.alphas[xhash]+count < s.k.elts[0].Count {
+	if s.alphas[alphaIdx]+count < s.k.elts[0].Count {
 		e := Element{
 			Key:   x,
-			Error: s.alphas[xhash],
-			Count: s.alphas[xhash] + count,
+			Error: s.alphas[alphaIdx],
+			Count: s.alphas[alphaIdx] + count,
 		}
-		s.alphas[xhash] += count
+		s.alphas[alphaIdx] += count
 		return e
 	}
 
 	// replace the current minimum element
 	minElement := s.k.elts[0]
 
-	mkhash := reduce(Hash64(minElement.Key, 0, false), len(s.alphas))
-	s.alphas[mkhash] = minElement.Count
+	mkhash := Hash64(minElement.Key, 0, s.caseSensitive)
+	mkalphaIdx := reduce(mkhash, len(s.alphas))
+	s.alphas[mkalphaIdx] = minElement.Count
 
 	e := Element{
 		Key:   x,
-		Error: s.alphas[xhash],
-		Count: s.alphas[xhash] + count,
+		Error: s.alphas[alphaIdx],
+		Count: s.alphas[alphaIdx] + count,
 	}
 	s.k.elts[0] = e
 
 	// we're not longer monitoring minKey
-	delete(s.k.m, minElement.Key)
+	delete(s.k.m, mkhash)
+	delete(s.k.strings, mkhash)
 	// but 'x' is as array position 0
-	s.k.m[x] = 0
+	s.k.m[xhash] = 0
+	s.k.strings[xhash] = x
 
 	heap.Fix(&s.k, 0)
 	return e
@@ -243,11 +255,11 @@ func (s *Stream) Merge(other *Stream) error {
 	}
 
 	for k := range eKeys {
-		idx1, ok1 := s.k.m[k]
-		idx2, ok2 := other.k.m[k]
-		xhash := reduce(Hash64(k, 0, false), len(s.alphas))
-		min1 := s.alphas[xhash]
-		min2 := other.alphas[xhash]
+		idx1, ok1 := s.k.m[Hash64(k, 0, s.caseSensitive)]
+		idx2, ok2 := other.k.m[Hash64(k, 0, s.caseSensitive)]
+		alphaIdx := reduce(Hash64(k, 0, s.caseSensitive), len(s.alphas))
+		min1 := s.alphas[alphaIdx]
+		min2 := other.alphas[alphaIdx]
 
 		switch {
 		case ok1 && ok2:
@@ -290,8 +302,10 @@ func (s *Stream) Merge(other *Stream) error {
 
 	// create heap
 	tk := keys{
-		m:    make(map[string]int),
-		elts: make([]Element, 0, s.n),
+		m:        make(map[uint64]int),
+		strings:  make(map[uint64]string),
+		elts:     make([]Element, 0, s.n),
+		caseSensitive: s.caseSensitive,
 	}
 	for _, e := range elts {
 		heap.Push(&tk, e)
@@ -319,18 +333,19 @@ func (s *Stream) Keys() []Element {
 
 // Estimate returns an estimate for the item x
 func (s *Stream) Estimate(x string) Element {
-	xhash := reduce(Hash64(x, 0, false), len(s.alphas))
+	xhash := Hash64(x, 0, s.caseSensitive)
+	alphaIdx := reduce(xhash, len(s.alphas))
 
 	// are we tracking this element?
-	if idx, ok := s.k.m[x]; ok {
+	if idx, ok := s.k.m[xhash]; ok {
 		e := s.k.elts[idx]
 		return e
 	}
 
-	count := s.alphas[xhash]
+	count := s.alphas[alphaIdx]
 	e := Element{
 		Key:   x,
-		Error: count,
+		Error: s.alphas[alphaIdx],
 		Count: count,
 	}
 	return e
@@ -339,6 +354,10 @@ func (s *Stream) Estimate(x string) Element {
 // EncodeMsgp ...
 func (s *Stream) EncodeMsgp(w *msgp.Writer) error {
 	if err := w.WriteInt(s.n); err != nil {
+		return err
+	}
+
+	if err := w.WriteBool(s.caseSensitive); err != nil {
 		return err
 	}
 
@@ -351,7 +370,6 @@ func (s *Stream) EncodeMsgp(w *msgp.Writer) error {
 			return err
 		}
 	}
-
 	return s.k.EncodeMsgp(w)
 }
 
@@ -366,6 +384,11 @@ func (s *Stream) DecodeMsgp(r *msgp.Reader) error {
 		return err
 	}
 
+	// Read caseSensitive flag
+	if s.caseSensitive, err = r.ReadBool(); err != nil {
+		return err
+	}
+
 	if sz, err = r.ReadArrayHeader(); err != nil {
 		return err
 	}
@@ -377,7 +400,10 @@ func (s *Stream) DecodeMsgp(r *msgp.Reader) error {
 		}
 	}
 
-	return s.k.DecodeMsp(r)
+	// Set caseSensitive on keys before decoding
+	s.k.caseSensitive = s.caseSensitive
+
+	return s.k.DecodeMsgp(r)
 }
 
 // Encode ...
@@ -404,14 +430,14 @@ type TopK struct {
 	*Stream
 }
 
-func New(k int) *TopK {
-	return NewWithScaleFactor(k, defaultScaleFactorM)
+func New(k int, caseSensitive bool) *TopK {
+	return NewWithScaleFactor(k, defaultScaleFactorM, caseSensitive)
 }
 
-func NewWithScaleFactor(k, m int) *TopK {
+func NewWithScaleFactor(k, m int, caseSensitive bool) *TopK {
 	return &TopK{
 		k:      k,
-		Stream: newStream(k * m),
+		Stream: newStream(k*m, caseSensitive),
 	}
 }
 
