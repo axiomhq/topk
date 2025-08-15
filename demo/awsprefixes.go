@@ -94,7 +94,7 @@ func main() {
 	}
 	fmt.Printf("Ranges: %d\n", len(ipr.Prefixes))
 
-	tk := topk.New(100, true)
+	tk := topk.New(100)
 
 	ipCount = 0
 	rangeCount := 0

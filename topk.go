@@ -268,6 +268,10 @@ func (s *Stream) Merge(other *Stream) error {
 		return fmt.Errorf("expected stream of size n %d, got %d", s.n, other.n)
 	}
 
+	if s.caseMode != other.caseMode {
+		return fmt.Errorf("expected stream of case mode %d, got %d", s.caseMode, other.caseMode)
+	}
+
 	// merge the elements
 	eKeys := make(map[string]struct{})
 	eMap := make(map[string]Element)

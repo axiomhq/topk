@@ -149,6 +149,10 @@ func TestTopKMerge(t *testing.T) {
 		}
 	}
 	assert.Equal(t, count, mtk.Count())
+
+	tk3 := NewWithOptions(20, Options{CaseMode: CaseInsensitive})
+	assert.Error(t, tk3.Merge(tk1))
+	assert.Error(t, tk1.Merge(tk3))
 }
 
 func loadWords() []string {
