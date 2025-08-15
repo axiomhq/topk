@@ -53,7 +53,7 @@ func Hash64(s string, seed uint64, caseSensitive bool) uint64 {
 			v1 ^= bits.RotateLeft64(((v1+v3)*k1)+v2, -37) * k0
 			hash += v0 ^ v1
 			// clear first 32 bytes and shift right by 32
-			copy(hashingBytes[:], hashingBytes[32:])
+			copy(hashingBytes, hashingBytes[32:])
 			hashingBytes = hashingBytes[:len(hashingBytes)-32]
 		}
 	}
@@ -66,25 +66,29 @@ func Hash64(s string, seed uint64, caseSensitive bool) uint64 {
 		v0 ^= bits.RotateLeft64(v0*k0, -21) + v1
 		v1 ^= bits.RotateLeft64(v1*k3, -21) + v0
 		hash += v1
-		hashingBytes = hashingBytes[16:]
+		copy(hashingBytes, hashingBytes[16:])
+		hashingBytes = hashingBytes[:len(hashingBytes)-16]
 	}
 
 	if len(hashingBytes) >= 8 {
 		hash += binary.LittleEndian.Uint64(hashingBytes[:8]) * k3
-		hashingBytes = hashingBytes[8:]
 		hash ^= bits.RotateLeft64(hash, -55) * k1
+		copy(hashingBytes, hashingBytes[8:])
+		hashingBytes = hashingBytes[:len(hashingBytes)-8]
 	}
 
 	if len(hashingBytes) >= 4 {
 		hash += uint64(binary.LittleEndian.Uint32(hashingBytes[:4])) * k3
 		hash ^= bits.RotateLeft64(hash, -26) * k1
-		hashingBytes = hashingBytes[4:]
+		copy(hashingBytes, hashingBytes[4:])
+		hashingBytes = hashingBytes[:len(hashingBytes)-4]
 	}
 
 	if len(hashingBytes) >= 2 {
 		hash += uint64(binary.LittleEndian.Uint16(hashingBytes[:2])) * k3
-		hashingBytes = hashingBytes[2:]
 		hash ^= bits.RotateLeft64(hash, -48) * k1
+		copy(hashingBytes, hashingBytes[2:])
+		hashingBytes = hashingBytes[:len(hashingBytes)-2]
 	}
 
 	if len(hashingBytes) >= 1 {

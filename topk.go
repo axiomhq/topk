@@ -55,9 +55,9 @@ func (elts elementsByCountDescending) Less(i, j int) bool {
 func (elts elementsByCountDescending) Swap(i, j int) { elts[i], elts[j] = elts[j], elts[i] }
 
 type keys struct {
-	m       map[uint64]int
-	elts    []Element
-	hash    func(string, uint64) uint64
+	m    map[uint64]int
+	elts []Element
+	hash func(string, uint64) uint64
 }
 
 func (tk *keys) EncodeMsgp(w *msgp.Writer) error {
@@ -170,16 +170,16 @@ func (tk *keys) Pop() interface{} {
 
 // Stream calculates the TopK elements for a stream
 type Stream struct {
-	n      int
-	k      keys
-	alphas []int
-	hash   func(string, uint64) uint64
+	n        int
+	k        keys
+	alphas   []int
+	hash     func(string, uint64) uint64
 	caseMode CaseMode
 }
 
 // New returns a Stream estimating the top n most frequent elements
 func newStream(n int, caseMode CaseMode) *Stream {
-	hashingBytes = make([]byte, 0, 32)
+	hashingBytes = make([]byte, 0, 40)
 	runeBytes = make([]byte, utf8.UTFMax)
 
 	s := Stream{
@@ -195,9 +195,9 @@ func newStream(n int, caseMode CaseMode) *Stream {
 	}
 
 	s.k = keys{
-		m:       make(map[uint64]int, n),
-		elts:    make([]Element, 0, n),
-		hash:    s.hash,
+		m:    make(map[uint64]int, n),
+		elts: make([]Element, 0, n),
+		hash: s.hash,
 	}
 
 	return &s
@@ -267,7 +267,6 @@ func (s *Stream) Merge(other *Stream) error {
 	if s.n != other.n {
 		return fmt.Errorf("expected stream of size n %d, got %d", s.n, other.n)
 	}
-	
 
 	// merge the elements
 	eKeys := make(map[string]struct{})
@@ -328,9 +327,9 @@ func (s *Stream) Merge(other *Stream) error {
 
 	// create heap
 	tk := keys{
-		m:             make(map[uint64]int),
-		elts:          make([]Element, 0, s.n),
-		hash:          s.hash,
+		m:    make(map[uint64]int),
+		elts: make([]Element, 0, s.n),
+		hash: s.hash,
 	}
 	for _, e := range elts {
 		heap.Push(&tk, e)
@@ -415,7 +414,7 @@ func (s *Stream) DecodeMsgp(r *msgp.Reader) error {
 	}
 
 	// we need to add type sniffing here to check if the stream is of a new version
-	// with a boolean flag for the case sensitivity 
+	// with a boolean flag for the case sensitivity
 	// if not, it will be true by default
 	caseSensitive := true
 	if typ, err := r.NextType(); err == nil {
