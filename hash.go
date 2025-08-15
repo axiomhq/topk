@@ -12,7 +12,15 @@ import (
 	"unicode/utf8"
 )
 
-func Hash64(s string, seed uint64, caseSensitive bool, hashingBytes []byte, runeBytes []byte) uint64 {
+func Hash64CaseInsensitive(s string, seed uint64) uint64 {
+	return Hash64(s, seed, false)
+}
+
+func Hash64CaseSensitive(s string, seed uint64) uint64 {
+	return Hash64(s, seed, true)
+}
+
+func Hash64(s string, seed uint64, caseSensitive bool) uint64 {
 	const (
 		k0 = 0xD6D018F5
 		k1 = 0xA2AA033B
@@ -87,6 +95,7 @@ func Hash64(s string, seed uint64, caseSensitive bool, hashingBytes []byte, rune
 	hash ^= bits.RotateLeft64(hash, -28)
 	hash *= k0
 	hash ^= bits.RotateLeft64(hash, -29)
-
+	// clear the hashingBytes
+	hashingBytes = hashingBytes[:0]
 	return hash
 }

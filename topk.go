@@ -27,6 +27,11 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
+var (
+	hashingBytes []byte
+	runeBytes    []byte
+)
+
 // Element is a TopK item
 type Element struct {
 	Key   string `json:"key"`
@@ -43,12 +48,9 @@ func (elts elementsByCountDescending) Less(i, j int) bool {
 func (elts elementsByCountDescending) Swap(i, j int) { elts[i], elts[j] = elts[j], elts[i] }
 
 type keys struct {
-	m             map[uint64]int
-	strings       map[uint64]string
-	elts          []Element
-	caseSensitive bool
-	hashingBytes  []byte
-	runeBytes     []byte
+	m       map[uint64]int
+	elts    []Element
+	hash    func(string, uint64) uint64
 }
 
 func (tk *keys) EncodeMsgp(w *msgp.Writer) error {
@@ -56,7 +58,7 @@ func (tk *keys) EncodeMsgp(w *msgp.Writer) error {
 		return err
 	}
 	for k, v := range tk.m {
-		if err := w.WriteString(tk.strings[k]); err != nil {
+		if err := w.WriteString(tk.elts[k].Key); err != nil {
 			return err
 		}
 		if err := w.WriteInt(v); err != nil {
@@ -92,7 +94,6 @@ func (tk *keys) DecodeMsgp(r *msgp.Reader) error {
 	}
 
 	tk.m = make(map[uint64]int, sz)
-	tk.strings = make(map[uint64]string, sz)
 
 	for i := uint32(0); i < sz; i++ {
 		key, err := r.ReadString()
@@ -103,8 +104,7 @@ func (tk *keys) DecodeMsgp(r *msgp.Reader) error {
 		if err != nil {
 			return err
 		}
-		tk.m[Hash64(key, 0, tk.caseSensitive, tk.hashingBytes, tk.runeBytes)] = val
-		tk.strings[Hash64(key, 0, tk.caseSensitive, tk.hashingBytes, tk.runeBytes)] = key
+		tk.m[tk.hash(key, 0)] = val
 	}
 
 	if sz, err = r.ReadArrayHeader(); err != nil {
@@ -127,6 +127,24 @@ func (tk *keys) DecodeMsgp(r *msgp.Reader) error {
 	return nil
 }
 
+func (tk *keys) DecodeMsgpOld(r *msgp.Reader) error {
+	var (
+		err error
+		sz  uint32
+	)
+
+	if sz, err = r.ReadMapHeader(); err != nil {
+		return err
+	}
+
+	tk.m = make(map[uint64]int, sz)
+
+	// for i := uint32(0); i < sz; i++ {
+	// 	key, err := r.ReadString()
+	// }
+	return nil
+}
+
 // Implement the container/heap interface
 
 // Len ...
@@ -140,51 +158,58 @@ func (tk *keys) Swap(i, j int) {
 
 	tk.elts[i], tk.elts[j] = tk.elts[j], tk.elts[i]
 
-	hashI := Hash64(tk.elts[i].Key, 0, tk.caseSensitive, tk.hashingBytes, tk.runeBytes)
-	hashJ := Hash64(tk.elts[j].Key, 0, tk.caseSensitive, tk.hashingBytes, tk.runeBytes)
+	hashI := tk.hash(tk.elts[i].Key, 0)
+	hashJ := tk.hash(tk.elts[j].Key, 0)
 	tk.m[hashI] = i
 	tk.m[hashJ] = j
 }
 
 func (tk *keys) Push(x interface{}) {
 	e := x.(Element)
-	hash := Hash64(e.Key, 0, tk.caseSensitive, tk.hashingBytes, tk.runeBytes)
+	hash := tk.hash(e.Key, 0)
 	tk.m[hash] = len(tk.elts)
-	tk.strings[hash] = e.Key
 	tk.elts = append(tk.elts, e)
 }
 
 func (tk *keys) Pop() interface{} {
 	var e Element
 	e, tk.elts = tk.elts[len(tk.elts)-1], tk.elts[:len(tk.elts)-1]
-	hash := Hash64(e.Key, 0, tk.caseSensitive, tk.hashingBytes, tk.runeBytes)
+	hash := tk.hash(e.Key, 0)
 	delete(tk.m, hash)
-	delete(tk.strings, hash)
 	return e
 }
 
 // Stream calculates the TopK elements for a stream
 type Stream struct {
-	n             int
-	k             keys
-	alphas        []int
-	caseSensitive bool
-	hashingBytes  []byte
-	runeBytes     []byte
+	n      int
+	k      keys
+	alphas []int
+	hash   func(string, uint64) uint64
 }
 
 // New returns a Stream estimating the top n most frequent elements
 func newStream(n int, caseSensitive bool) *Stream {
-	hashingBytes := make([]byte, 0, 32)
-	runeBytes := make([]byte, utf8.UTFMax)
-	return &Stream{
-		n:             n,
-		k:             keys{m: make(map[uint64]int, n), elts: make([]Element, 0, n), strings: make(map[uint64]string), caseSensitive: caseSensitive, hashingBytes: hashingBytes, runeBytes: runeBytes},
-		alphas:        make([]int, n*6), // 6 is the multiplicative constant from the paper
-		caseSensitive: caseSensitive,
-		hashingBytes:  hashingBytes,
-		runeBytes:     runeBytes,
+	hashingBytes = make([]byte, 0, 32)
+	runeBytes = make([]byte, utf8.UTFMax)
+
+	s := Stream{
+		n:      n,
+		alphas: make([]int, n*6), // 6 is the multiplicative constant from the paper
 	}
+
+	if caseSensitive {
+		s.hash = Hash64CaseSensitive
+	} else {
+		s.hash = Hash64CaseInsensitive
+	}
+
+	s.k = keys{
+		m:       make(map[uint64]int, n),
+		elts:    make([]Element, 0, n),
+		hash:    s.hash,
+	}
+
+	return &s
 }
 
 func reduce(x uint64, n int) uint32 {
@@ -195,7 +220,7 @@ func reduce(x uint64, n int) uint32 {
 // It returns an estimation for the just inserted element
 func (s *Stream) Insert(x string, count int) Element {
 
-	xhash := Hash64(x, 0, s.caseSensitive, s.hashingBytes, s.runeBytes)
+	xhash := s.hash(x, 0)
 	alphaIdx := reduce(xhash, len(s.alphas))
 	// are we tracking this element?
 	if idx, ok := s.k.m[xhash]; ok {
@@ -226,7 +251,7 @@ func (s *Stream) Insert(x string, count int) Element {
 	// replace the current minimum element
 	minElement := s.k.elts[0]
 
-	mkhash := Hash64(minElement.Key, 0, s.caseSensitive, s.hashingBytes, s.runeBytes)
+	mkhash := s.hash(minElement.Key, 0)
 	mkalphaIdx := reduce(mkhash, len(s.alphas))
 	s.alphas[mkalphaIdx] = minElement.Count
 
@@ -239,10 +264,8 @@ func (s *Stream) Insert(x string, count int) Element {
 
 	// we're not longer monitoring minKey
 	delete(s.k.m, mkhash)
-	delete(s.k.strings, mkhash)
 	// but 'x' is as array position 0
 	s.k.m[xhash] = 0
-	s.k.strings[xhash] = x
 
 	heap.Fix(&s.k, 0)
 	return e
@@ -253,6 +276,7 @@ func (s *Stream) Merge(other *Stream) error {
 	if s.n != other.n {
 		return fmt.Errorf("expected stream of size n %d, got %d", s.n, other.n)
 	}
+	
 
 	// merge the elements
 	eKeys := make(map[string]struct{})
@@ -265,9 +289,10 @@ func (s *Stream) Merge(other *Stream) error {
 	}
 
 	for k := range eKeys {
-		idx1, ok1 := s.k.m[Hash64(k, 0, s.caseSensitive, s.hashingBytes, s.runeBytes)]
-		idx2, ok2 := other.k.m[Hash64(k, 0, s.caseSensitive, s.hashingBytes, s.runeBytes)]
-		alphaIdx := reduce(Hash64(k, 0, s.caseSensitive, s.hashingBytes, s.runeBytes), len(s.alphas))
+		hashK := s.hash(k, 0)
+		idx1, ok1 := s.k.m[hashK]
+		idx2, ok2 := other.k.m[hashK]
+		alphaIdx := reduce(hashK, len(s.alphas))
 		min1 := s.alphas[alphaIdx]
 		min2 := other.alphas[alphaIdx]
 
@@ -312,10 +337,9 @@ func (s *Stream) Merge(other *Stream) error {
 
 	// create heap
 	tk := keys{
-		m:        make(map[uint64]int),
-		strings:  make(map[uint64]string),
-		elts:     make([]Element, 0, s.n),
-		caseSensitive: s.caseSensitive,
+		m:             make(map[uint64]int),
+		elts:          make([]Element, 0, s.n),
+		hash:          s.hash,
 	}
 	for _, e := range elts {
 		heap.Push(&tk, e)
@@ -343,7 +367,7 @@ func (s *Stream) Keys() []Element {
 
 // Estimate returns an estimate for the item x
 func (s *Stream) Estimate(x string) Element {
-	xhash := Hash64(x, 0, s.caseSensitive, s.hashingBytes, s.runeBytes)
+	xhash := s.hash(x, 0)
 	alphaIdx := reduce(xhash, len(s.alphas))
 
 	// are we tracking this element?
@@ -364,10 +388,6 @@ func (s *Stream) Estimate(x string) Element {
 // EncodeMsgp ...
 func (s *Stream) EncodeMsgp(w *msgp.Writer) error {
 	if err := w.WriteInt(s.n); err != nil {
-		return err
-	}
-
-	if err := w.WriteBool(s.caseSensitive); err != nil {
 		return err
 	}
 
@@ -394,10 +414,24 @@ func (s *Stream) DecodeMsgp(r *msgp.Reader) error {
 		return err
 	}
 
-	// Read caseSensitive flag
-	if s.caseSensitive, err = r.ReadBool(); err != nil {
-		return err
+	// we need to add type sniffing here to check if the stream is of a new version
+	// with a boolean flag for the case sensitivity 
+	// if not, it will be true by default
+	caseSensitive := true
+	if typ, err := r.NextType(); err == nil {
+		if typ == msgp.BoolType {
+			caseSensitive, err = r.ReadBool()
+			if err != nil {
+				return err
+			}
+		}
 	}
+
+	s.hash = Hash64CaseSensitive
+	if !caseSensitive {
+		s.hash = Hash64CaseInsensitive
+	}
+	s.k.hash = s.hash
 
 	if sz, err = r.ReadArrayHeader(); err != nil {
 		return err
@@ -409,9 +443,6 @@ func (s *Stream) DecodeMsgp(r *msgp.Reader) error {
 			return err
 		}
 	}
-
-	// Set caseSensitive on keys before decoding
-	s.k.caseSensitive = s.caseSensitive
 
 	return s.k.DecodeMsgp(r)
 }
