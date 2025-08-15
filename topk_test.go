@@ -111,7 +111,7 @@ func TestTopK(t *testing.T) {
 		t.Error(err)
 	}
 
-	if !reflect.DeepEqual(tk, decoded) {
+	if !Equal(tk, decoded) {
 		t.Error("they are not equal.")
 	}
 }
@@ -434,12 +434,10 @@ func TestMarshalUnMarshal(t *testing.T) {
 	err := sketch.Encode(b)
 	assert.NoError(t, err)
 
-	fmt.Println(len(b.Bytes()))
-
 	tmp := &TopK{}
 	err = tmp.Decode(b)
 	assert.NoError(t, err)
-	assert.EqualValues(t, sketch, tmp)
+	assert.True(t, Equal(sketch, tmp))
 
 }
 func TestCaseSensitive(t *testing.T) {
@@ -465,7 +463,7 @@ func TestCaseSensitive(t *testing.T) {
 	assert.Equal(t, 1, len(keys))
 	assert.Contains(t, []string{"world", "Goodbye"}, keys[0].Key)
 
-	sketch = NewWithOptions(1, Options{CaseSensitive: false})
+	sketch = NewWithOptions(1, Options{CaseMode: CaseInsensitive})
 	for _, w := range words {
 		sketch.Insert(w, 1)
 	}
@@ -474,17 +472,15 @@ func TestCaseSensitive(t *testing.T) {
 	assert.Equal(t, 1, len(keys))
 	assert.Equal(t, "world", keys[0].Key)
 
-	// buf := bytes.NewBuffer(nil)
-	// err := sketch.Encode(buf)
-	// assert.NoError(t, err)
+	buf := bytes.NewBuffer(nil)
+	err := sketch.Encode(buf)
+	assert.NoError(t, err)
 
-	// decoded := NewWithOptions(1, Options{CaseSensitive: false})
-	// err = decoded.Decode(buf)
-	// assert.NoError(t, err)
-
-	// if !reflect.DeepEqual(sketch, decoded) {
-	// 	t.Error("they are not equal.")
-	// }
+	decoded := NewWithOptions(1, Options{CaseMode: CaseInsensitive})
+	err = decoded.Decode(buf)
+	assert.NoError(t, err)
+	// check deep equal of the two structs except for the hashing function
+	assert.True(t, Equal(sketch, decoded))
 }
 
 func BenchmarkTopK(b *testing.B) {
@@ -501,4 +497,17 @@ func BenchmarkTopK(b *testing.B) {
 	}
 
 	assert.Greater(b, dummy, 0)
+}
+
+func Equal(a, b *TopK) bool {
+	if !reflect.DeepEqual(a.Stream.k.m, b.Stream.k.m) ||
+		!reflect.DeepEqual(a.Stream.k.elts, b.Stream.k.elts) ||
+		!reflect.DeepEqual(a.Stream.alphas, b.Stream.alphas) ||
+		a.Stream.caseMode != b.Stream.caseMode ||
+		a.Stream.n != b.Stream.n ||
+		a.k != b.k ||
+		a.c != b.c {
+		return false
+	}
+	return true
 }

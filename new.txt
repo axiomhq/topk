@@ -2,15 +2,15 @@ goos: linux
 goarch: amd64
 pkg: github.com/axiomhq/topk
 cpu: Intel(R) Core(TM) i7-10870H CPU @ 2.20GHz
-BenchmarkTopK-16    	      43	  27725203 ns/op	 2978439 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      43	  27712892 ns/op	 2978440 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      40	  28053526 ns/op	 2978432 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      43	  29060686 ns/op	 2978432 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      38	  31551410 ns/op	 2978429 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      38	  30470173 ns/op	 2978433 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      36	  30349712 ns/op	 2978434 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      39	  30763009 ns/op	 2978438 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      34	  30701091 ns/op	 2978438 B/op	  260892 allocs/op
-BenchmarkTopK-16    	      33	  30534538 ns/op	 2978437 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      42	  28128431 ns/op	 2978448 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      42	  27957328 ns/op	 2978454 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      43	  28152837 ns/op	 2978452 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      42	  28088243 ns/op	 2978448 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      43	  28202819 ns/op	 2978449 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      43	  28197407 ns/op	 2978449 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      39	  28190758 ns/op	 2978447 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      44	  28250356 ns/op	 2978450 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      40	  27971144 ns/op	 2978447 B/op	  260892 allocs/op
+BenchmarkTopK-16    	      43	  28173620 ns/op	 2978448 B/op	  260892 allocs/op
 PASS
-ok  	github.com/axiomhq/topk	11.580s
+ok  	github.com/axiomhq/topk	11.961s

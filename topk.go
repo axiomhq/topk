@@ -27,6 +27,13 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
+type CaseMode int
+
+const (
+	CaseSensitive CaseMode = iota
+	CaseInsensitive
+)
+
 var (
 	hashingBytes []byte
 	runeBytes    []byte
@@ -57,8 +64,8 @@ func (tk *keys) EncodeMsgp(w *msgp.Writer) error {
 	if err := w.WriteMapHeader(uint32(len(tk.m))); err != nil {
 		return err
 	}
-	for k, v := range tk.m {
-		if err := w.WriteString(tk.elts[k].Key); err != nil {
+	for _, v := range tk.m {
+		if err := w.WriteString(tk.elts[v].Key); err != nil {
 			return err
 		}
 		if err := w.WriteInt(v); err != nil {
@@ -127,24 +134,6 @@ func (tk *keys) DecodeMsgp(r *msgp.Reader) error {
 	return nil
 }
 
-func (tk *keys) DecodeMsgpOld(r *msgp.Reader) error {
-	var (
-		err error
-		sz  uint32
-	)
-
-	if sz, err = r.ReadMapHeader(); err != nil {
-		return err
-	}
-
-	tk.m = make(map[uint64]int, sz)
-
-	// for i := uint32(0); i < sz; i++ {
-	// 	key, err := r.ReadString()
-	// }
-	return nil
-}
-
 // Implement the container/heap interface
 
 // Len ...
@@ -185,10 +174,11 @@ type Stream struct {
 	k      keys
 	alphas []int
 	hash   func(string, uint64) uint64
+	caseMode CaseMode
 }
 
 // New returns a Stream estimating the top n most frequent elements
-func newStream(n int, caseSensitive bool) *Stream {
+func newStream(n int, caseMode CaseMode) *Stream {
 	hashingBytes = make([]byte, 0, 32)
 	runeBytes = make([]byte, utf8.UTFMax)
 
@@ -197,7 +187,8 @@ func newStream(n int, caseSensitive bool) *Stream {
 		alphas: make([]int, n*6), // 6 is the multiplicative constant from the paper
 	}
 
-	if caseSensitive {
+	s.caseMode = caseMode
+	if caseMode == CaseSensitive {
 		s.hash = Hash64CaseSensitive
 	} else {
 		s.hash = Hash64CaseInsensitive
@@ -391,6 +382,15 @@ func (s *Stream) EncodeMsgp(w *msgp.Writer) error {
 		return err
 	}
 
+	caseSensitive := true
+	if s.caseMode == CaseInsensitive {
+		caseSensitive = false
+	}
+
+	if err := w.WriteBool(caseSensitive); err != nil {
+		return err
+	}
+
 	if err := w.WriteArrayHeader(uint32(len(s.alphas))); err != nil {
 		return err
 	}
@@ -427,8 +427,10 @@ func (s *Stream) DecodeMsgp(r *msgp.Reader) error {
 		}
 	}
 
+	s.caseMode = CaseSensitive
 	s.hash = Hash64CaseSensitive
 	if !caseSensitive {
+		s.caseMode = CaseInsensitive
 		s.hash = Hash64CaseInsensitive
 	}
 	s.k.hash = s.hash
@@ -472,21 +474,21 @@ type TopK struct {
 }
 
 func New(k int) *TopK { // caseSensitive is true by default
-	return NewWithScaleFactor(k, defaultScaleFactorM, true)
+	return NewWithScaleFactor(k, defaultScaleFactorM, CaseSensitive)
 }
 
 type Options struct {
-	CaseSensitive bool
+	CaseMode CaseMode
 }
 
 func NewWithOptions(k int, opts Options) *TopK {
-	return NewWithScaleFactor(k, defaultScaleFactorM, opts.CaseSensitive)
+	return NewWithScaleFactor(k, defaultScaleFactorM, opts.CaseMode)
 }
 
-func NewWithScaleFactor(k, m int, caseSensitive bool) *TopK {
+func NewWithScaleFactor(k, m int, caseMode CaseMode) *TopK {
 	return &TopK{
 		k:      k,
-		Stream: newStream(k*m, caseSensitive),
+		Stream: newStream(k*m, caseMode),
 	}
 }
 
